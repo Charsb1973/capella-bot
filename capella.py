@@ -7,6 +7,8 @@ from numba import njit
 import os
 from enum import Enum
 
+token= #your discord bot token
+
 if not os.path.exists("temp"):
     os.makedirs("temp")
 
@@ -286,4 +288,5 @@ def keep_alive():
 
 
 keep_alive()
-bot.run(os.getenv("token"))
+bot.run(os.getenv(token))
+
