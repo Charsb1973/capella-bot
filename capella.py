@@ -98,7 +98,7 @@ async def image_command(interaction: discord.Interaction,width: int,attachment: 
 #->>> ----safe_send----
 #|-> Permite to send messages with more than 2000 characters
 #     >>> if lenght is > 2000, we send others messages, to divide the text in different message with less than 2000 characters
-    async def safe_send_ascii(channel, content, interaction):
+async def safe_send_ascii(channel, content, interaction):
     if not len(''.join(content))+8+2*len(content)>2000:
         return True
     content=content[5:-5]
@@ -343,6 +343,7 @@ from dotenv import load_dotenv
 load_dotenv()
 #je met le token dans un .env pour la sécurité
 bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
