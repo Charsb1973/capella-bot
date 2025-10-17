@@ -7,24 +7,24 @@ from numba import njit
 import os
 from enum import Enum
 
-token= #your discord bot token
-
+#créer un dossier temporaire si il n'existe pas déjà
 if not os.path.exists("temp"):
     os.makedirs("temp")
-
+#indents basiques pour les bots discords
+#basic indents
 intents = discord.Intents.default()
 intents.message_content = True
 intents.dm_messages = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
+#uen classe pour choisir des optiosn dans une des commandes
 class FiltreOptions(Enum):
     floyd = "floyd"
     stucki = "stucki"
     ar = "ar"
 
-
+#envoie un print pour savoir si le bot est connecté ou non
 @bot.event
 async def on_ready():
     print(f"Connecté en tant que {bot.user}")
@@ -35,12 +35,12 @@ async def on_ready():
     except Exception as e:
         print(f"Erreur lors de la synchronisation des commandes : {e}")
 
-
+#première commande, pour dire bonjour
 @bot.command()
 async def bonjours(ctx):
     await ctx.send("Salut tout le monde ! 👋")
 
-
+#commande qui sert à mettre une image en noir et blanc
 @bot.tree.command(name="noir_et_blanc",
                   description="met ton image en noir et blanc !",
                   guild=None)
@@ -70,7 +70,7 @@ async def image_command(interaction: discord.Interaction,
         (int(img.width * float(size)),
          int(img.height * float(size)))) if size else img,
                    dtype=np.float32)
-    arr = globals()[error_type](g(arr))
+    arr = globals()[error_type](color_to_grey(arr))
     arr = (arr * 255).clip(0, 255).astype(np.uint8)
     img = Image.fromarray(arr[:-2, 2:-2])
     img.save(path)
@@ -139,56 +139,56 @@ async def safe_send_ascii(channel, content, interaction):
 
 
 @njit
-def g(i):
-    h, w = i.shape[:2]
-    r = np.empty((h, w), np.float32)
-    for y in range(h):
-        for x in range(w):
-            r[y,
-              x] = .2989 * i[y, x][0] + .587 * i[y, x][1] + .114 * i[y, x][2]
-    return r
+def color_to_grey(image):
+    height, width = image.shape[:2]
+    new_array = np.empty((height, width), np.float32)
+    for y in range(height):
+        for x in range(width):
+            new_array[y,
+              x] = .2989 * image[y, x][0] + .587 * image[y, x][1] + .114 * image[y, x][2]
+    return new_array
 
 
 @njit
-def ar(a):
-    h, w = a.shape
-    for i in range(h - 2):
-        for j in range(2, w - 2):
-            v = a[i, j]
-            n = 255. if v >= 128. else 0.
-            e = v - n
-            a[i, j] = n
+def ar(array):
+    height, width = array.shape
+    for i in range(height - 2):
+        for j in range(2, width - 2):
+            pixel = array[i, j]
+            new_pixel = 255. if pixel >= 128. else 0.
+            error = pixel - new_pixel
+            array[i, j] = new_pixel
             for x, y in [(0, 1), (1, -1), (1, 0), (1, 1), (2, 0), (0, 2)]:
-                a[i + x, j + y] += e * .125
-    return np.clip(a, 0, 255)
+                array[i + x, j + y] += error * .125
+    return np.clip(array, 0, 255)
 
 
-def floyd(a):
-    h, w = a.shape
-    for i in range(h - 1):
-        for j in range(1, w - 1):
-            v = a[i, j]
-            n = 255. if v >= 128. else 0.
-            e = v - n
-            a[i, j] = n
-            a[i, j + 1] += e * .4375
-            a[i + 1, j - 1] += e * .1875
-            a[i + 1, j] += e * .3125
-            a[i + 1, j + 1] += e * .0625
-    return np.clip(a, 0, 255)
+def floyd(array):
+    height, width = array.shape
+    for i in range(height - 1):
+        for j in range(1, width - 1):
+            pixel = array[i, j]
+            new_pixel = 255. if pixel >= 128. else 0.
+            error = pixel - new_pixel
+            array[i, j] = new_pixel
+            array[i, j + 1] += error * .4375
+            array[i + 1, j - 1] += error * .1875
+            array[i + 1, j] += error * .3125
+            array[i + 1, j + 1] += error * .0625
+    return np.clip(array, 0, 255)
 
 
-def stucki(a):
-    h, w = a.shape
-    for i in range(h - 2):
-        for j in range(2, w - 2):
-            v = a[i, j]
-            n = 255. if v >= 128. else 0.
-            e = v - n
-            a[i, j] = n
+def stucki(array):
+    height, width = array.shape
+    for i in range(height - 2):
+        for j in range(2, width - 2):
+            pixel = array[i, j]
+            new_pixel = 255. if pixel >= 128. else 0.
+            error = pixel - new_pixel
+            array[i, j] = new_pixel
             for x, y in [(0, 1), (1, -1), (1, 0), (1, 1), (2, 0), (0, 2)]:
-                a[i + x, j + y] += e * .125
-    return np.clip(a, 0, 255)
+                array[i + x, j + y] += error * .125
+    return np.clip(array, 0, 255)
 
 
 def decouper_image(path_array, nb_colonnes):
@@ -238,7 +238,7 @@ def full_invert(liste):
 
 
 def act(img, column, ver=1, quality=None, invert=False):
-    arr = g(
+    arr = color_to_grey(
         np.array(img.resize(
             (int(img.width * float(quality)),
              int(img.height * float(quality)))) if quality else img,
@@ -251,7 +251,7 @@ def act(img, column, ver=1, quality=None, invert=False):
         arr = stucki(arr)
     arr = (arr * 255).clip(0, 255).astype(np.uint8)
     img = decouper_image(arr, column)
-    img = [list(row) for row in zip(*img)]
+    img = [[img[i][j] for i in range(len(img))] for j in range(len(img[0]))]
     for i in range(len(img)):
         for j in range(len(img[0])):
             img[i][j] = image_vers_caractere_braille(
@@ -262,31 +262,9 @@ def act(img, column, ver=1, quality=None, invert=False):
         img[i] = ''.join(img[i])
     return img
 
+from dotenv import load_dotenv
+load_dotenv()
+#je met le token dans un .env pour la sécurité
+bot.run(os.getenv("DISCORD_TOKEN"))
 
-from flask import Flask
-from threading import Thread
-import datetime
-
-app = Flask('')
-
-
-@app.route('/')
-def home():
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[PING] UptimeRobot ou navigateur a visité la page à {now}")
-    return "Bot actif"
-
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-
-def keep_alive():
-    print('keepe alive')
-    t = Thread(target=run)
-    t.start()
-
-
-keep_alive()
-bot.run(os.getenv(token))
 
