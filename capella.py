@@ -64,29 +64,24 @@ async def image_command(interaction: discord.Interaction,error_type: FiltreOptio
     return
 
 #-------------Ascii_Art----------------
-#|-> transform images in binary, with a selected error diffusion system
-#>>> cut images in a lot of small pictures, each picture for an ascii character
-#>>> apply an other error_diffusion on the small picture to get a 8 by 2 pixel img
-#>>> find the correct braille character that fit with the picture
-#>>> send all braille characters to recreate the image.
+#|-> resize images to match braille structure
+#>>> transform images in binary, with a floyd arror diffusion system
+#>>> cut images on small images and convert them on braille character
+
 @bot.tree.command(name="ascii_art", description="met ton image en ascii !", guild=None)
-@app_commands.describe(width="choisir la taille (max 100)",inverted="couleur inversé ?",quality="met un multiplicateur de la taille de ton image (plus c'est grand, plus c'est quali), (pas plus de 5 sinon crash !)")
-async def image_command(interaction: discord.Interaction,width: int,attachment: discord.Attachment, quality: float=1.0, inverted: bool=False):
+@app_commands.describe(width="choisir la taille (max 100)",inverted="couleur inversé ?",)
+async def image_command(interaction: discord.Interaction,height: int,attachment: discord.Attachment, inverted: bool=False):
     await interaction.response.defer(thinking=True)
     inverted=not inverted
     if not attachment.filename.lower().endswith((".png", ".jpg", ".bmp")):
         await interaction.followup.send("l'image doit etre du format .png, .jpg ou .bmp")
         return
-    if quality>5:
-        await interaction.followup.send("quality ne doit pas etre a plus de 5 pour ne pas faire tout crash")
-        return
-    if width>100:
+    if height>100:
         await interaction.response.send_message("hopopop ! pas plus de 100 !")
         return
     path=f"temp/{attachment.filename}"
     await attachment.save(path)
-    img=Image.open(path).convert('RGB')
-    arr=act(img, width, 1, quality, inverted)
+    liste=asciiator(path, height, invert, resize=True)
     content='```\n'
     content += '\n'.join(arr)
     content += '\n```'
@@ -161,116 +156,65 @@ async def image_command(interaction: discord.Interaction,choix_1: str,choix_2: s
 async def image_command(interaction: discord.Interaction,nombre:int=6):
     await interaction.response.send_message(f'le dée est tombé sur {random.randint(1,nombre)} !')
     
+def floyd_error_diff(image):
+    array=np.array(image.convert('L'), dtype=float)
+    min_val=array.min()
+    max_val=array.max()
+    if max_val>min_val:
+        array=(array-min_val)*(255/(max_val-min_val))
+    height, width=array.shape
+    for i in range(height-1):
+        for j in range(width-1):
+            old_pixel=array[i,j]
+            new_pixel=255 if old_pixel>=128 else 0
+            error=old_pixel-new_pixel
+            array[i,j]=new_pixel
+            if j+1<width:
+                array[i,j+1]+=error*0.4375
+            if i+1<height and j>0:
+                array[i+1,j-1]+=error*0.1875
+            if i+1<height:
+                array[i+1,j]+=error*0.3125
+            if i+1<height and j+1<width:
+                array[i+1,j+1]+=error*0.0625
+    return Image.fromarray(np.clip(array, 0, 255).astype(np.uint8))
 
-
-@njit
-def color_to_grey(image):
-    height, width = image.shape[:2]
-    new_array = np.empty((height, width), np.float32)
-    for y in range(height):
-        for x in range(width):
-            new_array[y,
-              x] = .2989 * image[y, x][0] + .587 * image[y, x][1] + .114 * image[y, x][2]
-    return new_array
-
-
-@njit
-def ar(array):
-    height, width = array.shape
-    for i in range(height - 2):
-        for j in range(2, width - 2):
-            pixel = array[i, j]
-            new_pixel = 255. if pixel >= 128. else 0.
-            error = pixel - new_pixel
-            array[i, j] = new_pixel
-            for x, y in [(0, 1), (1, -1), (1, 0), (1, 1), (2, 0), (0, 2)]:
-                array[i + x, j + y] += error * .125
-    return np.clip(array, 0, 255)
-
-
-def floyd(array):
-    height, width = array.shape
-    for i in range(height - 1):
-        for j in range(1, width - 1):
-            pixel = array[i, j]
-            new_pixel = 255. if pixel >= 128. else 0.
-            error = pixel - new_pixel
-            array[i, j] = new_pixel
-            array[i, j + 1] += error * .4375
-            array[i + 1, j - 1] += error * .1875
-            array[i + 1, j] += error * .3125
-            array[i + 1, j + 1] += error * .0625
-    return np.clip(array, 0, 255)
-
-
-def stucki(array):
-    height, width = array.shape
-    for i in range(height - 2):
-        for j in range(2, width - 2):
-            pixel = array[i, j]
-            new_pixel = 255. if pixel >= 128. else 0.
-            error = pixel - new_pixel
-            array[i, j] = new_pixel
-            for x, y in [(0, 1), (1, -1), (1, 0), (1, 1), (2, 0), (0, 2)]:
-                array[i + x, j + y] += error * .125
-    return np.clip(array, 0, 255)
-
-def decouper_image(path_array, nb_colonnes):
-    image = Image.fromarray(path_array[:-2, 2:-2], 'L')
-    largeur, hauteur = image.size
-    nb_colonnes = min(nb_colonnes, largeur)
-    largeur_colonne = largeur // nb_colonnes
-    hauteur_bloc = max(1, int(largeur_colonne * (5 / 3)))
-    nb_blocs_verticaux = max(1, hauteur // hauteur_bloc)
-    liste_blocs = []
-    for col in range(nb_colonnes):
-        x0, x1 = col * largeur_colonne, (col + 1) * largeur_colonne
-        colonne_blocs = []
-        for ligne in range(nb_blocs_verticaux):
-            y0, y1 = ligne * hauteur_bloc, (ligne + 1) * hauteur_bloc
-            bloc = image.crop((x0, y0, x1, y1))
-            colonne_blocs.append(bloc)
-        liste_blocs.append(colonne_blocs)
-    return liste_blocs
-def reduire_en_nb_2x4(image):
-    image = image.convert("L")
-    image = image.resize((2, 4), resample=Image.BICUBIC)
-    return image.convert("1")
-def image_vers_caractere_braille(image):
-    pixels = image.load()
-    mapping = [(0, 0), (0, 1), (0, 2), (1, 0),
-               (1, 1), (1, 2), (0, 3), (1, 3)]
-    code_braille = 0
-    for i, (x, y) in enumerate(mapping):
-        if pixels[x, y] == 0:
-            code_braille |= (1 << i)
-    return chr(0x2800 + code_braille)
-def inverser_braille(car):
-    code = ord(car)
-    bits = code - 0x2800
-    bits_inverse = bits ^ 0b11111111
-    return chr(0x2800 + bits_inverse)
-def full_invert(liste):
-    return [[inverser_braille(car) for car in ligne] for ligne in liste]
-def act(img, column, ver=1, quality=None, invert=False):
-    arr=color_to_grey(np.array(img.resize((int(img.width*float(quality)),int(img.height*float(quality)))) if quality else img,dtype=np.float32))
-    if ver == 1:
-        arr = floyd(arr)
-    elif ver == 2:
-        arr = ar(arr)
+def resizer(wh):
+    w=wh[0]
+    h=wh[1]
+    ratio=5*w/(3*h)
+    new_h=4*h
+    new_w=2*h*ratio
+    return (new_w,new_h)
+def asciiator(path, lign, invert, resize=True):
+    i=Image.open(path)
+    if resize:
+        w,h=resizer(i.size)
     else:
-        arr = stucki(arr)
-    arr=(arr*255).clip(0,255).astype(np.uint8)
-    img = decouper_image(arr, column)
-    img = [[img[i][j] for i in range(len(img))] for j in range(len(img[0]))]
-    for i in range(len(img)):
-        for j in range(len(img[0])):
-            img[i][j] = image_vers_caractere_braille(reduire_en_nb_2x4(img[i][j]))
-    if invert:
-        img = full_invert(img)
-    for i in range(len(img)):
-        img[i] = ''.join(img[i]) 
-    return img
+        w,h=i.size
+    width=int(w*lign*4/h)
+    i=i.resize((width,lign*4), Image.LANCZOS)
+    i=i.convert('L')
+    i=floyd_error_diff(i)
+    li=[]
+    for lgn in range(0,lign*4,4):
+        li2=[]
+        for col in range(0,i.size[0],2):    
+            box=(col, lgn, col+2, lgn+4)
+            sub=i.crop(box)
+            st=""
+            for x in range(2):
+                for y in range(4):
+                    st+=str(0 if sub.getpixel((x,y)) == 0 else 1)
+            st=st[7]+st[6]+st[5]+st[2]+st[4]+st[1]+st[3]+st[0]
+            if not invert:
+                st=st.replace('1','2')
+                st=st.replace('0','1')
+                st=st.replace('2','0')
+            hexa=int(st, 2)
+            li2.append('⠠' if hexa==0 else chr(hexa+10240))
+        li.append(li2)
+    return li
 
 def vector(path,s_path):
     img_color = cv2.imread(path)
@@ -343,6 +287,7 @@ from dotenv import load_dotenv
 load_dotenv()
 #je met le token dans un .env pour la sécurité
 bot.run(os.getenv("DISCORD_TOKEN"))
+
 
 
 
